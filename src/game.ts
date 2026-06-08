@@ -276,13 +276,6 @@ export class TypsternityGame {
     this.elements.codeInput.addEventListener('input', () => {
       this.queueInputEvaluation()
     })
-
-    this.elements.codeInput.addEventListener('keydown', (event: KeyboardEvent) => {
-      if (event.key === 'Tab') {
-        event.preventDefault()
-        void this.skip()
-      }
-    })
   }
 
   private initializeDebugMenu(): void {
@@ -551,7 +544,7 @@ export class TypsternityGame {
 
   private updateTimer(): void {
     if (!Number.isFinite(this.timeLeft)) {
-      this.elements.timerValue.textContent = this.isPracticeMissedMode ? 'practice' : '∞'
+      this.elements.timerValue.textContent = this.isPracticeMissedMode ? 'Practice' : '∞'
       this.elements.timerValue.classList.toggle('timer-mode-label', this.isPracticeMissedMode)
       this.elements.timerValue.classList.remove('urgent')
       return
@@ -947,7 +940,7 @@ export class TypsternityGame {
     this.pendingCorrect = false
 
     if (fromTimer) {
-      await this.endGame()
+      await this.endGame(true)
     } else {
       await this.nextProblem()
     }
@@ -982,8 +975,11 @@ export class TypsternityGame {
     await this.nextProblem()
   }
 
-  private async endGame(): Promise<void> {
-    await this.flushInputEvaluation()
+  private async endGame(skipFlush = false): Promise<void> {
+    if (!skipFlush) {
+      await this.flushInputEvaluation()
+    }
+
     this.clearTimers()
     this.recordCurrentProblemAsEnded()
     this.exitSolutionMode()
@@ -991,7 +987,9 @@ export class TypsternityGame {
     const highScore = this.updateStoredHighScore()
     this.showScreen('end')
     this.elements.finalScore.textContent = String(this.score)
-    this.elements.timeSpentValue.textContent = formatDuration(elapsedSeconds)
+    this.elements.timeSpentValue.textContent = this.isPracticeMissedMode
+      ? 'Practice'
+      : formatDuration(elapsedSeconds)
     this.elements.highScoreValue.textContent = String(highScore)
     this.elements.correctValue.textContent = String(this.correct)
     this.elements.skippedValue.textContent = String(this.skippedCount)

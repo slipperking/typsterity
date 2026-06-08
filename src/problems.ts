@@ -4,65 +4,102 @@ function countOccurrences(source: string, token: string): number {
   return source.split(token).length - 1
 }
 
-function scoreProblem(source: string, basePoints: number): number {
-  const lengthBonus = Math.floor(source.length / 12)
-  const bracketBonus = Math.floor((source.match(/[()[\]{}]/g) ?? []).length / 14)
-  const typingBonus =
-    countOccurrences(source, 'bold(') * 1 +
-    countOccurrences(source, 'partial') +
-    countOccurrences(source, 'dif') +
-    countOccurrences(source, 'integral') +
-    countOccurrences(source, 'sum_') +
-    countOccurrences(source, 'product_') +
-    countOccurrences(source, 'mat(') * 4 +
-    countOccurrences(source, 'nabla') +
-    countOccurrences(source, 'Gamma') +
-    countOccurrences(source, 'Res') * 2 +
-    countOccurrences(source, 'overline(') +
-    countOccurrences(source, 'subset.eq') * 2 +
-    countOccurrences(source, 'thin') * 3 +
-    countOccurrences(source, '"Res"') * 6 +
-    countOccurrences(source, 'forall') * 2 +
-    countOccurrences(source, 'exists') * 2 +
-    countOccurrences(source, 'hat(') +
-    countOccurrences(source, 'oo') +
-    countOccurrences(source, '^(') +
-    countOccurrences(source, 'planck') +
-    countOccurrences(source, '(') * 2 +
-    countOccurrences(source, ',') +
-    countOccurrences(source, ';') * 2 +
-    countOccurrences(source, '\\u') * 4
+function isShiftRequiredChar(char: string): boolean {
+  if (/^\s$/u.test(char)) {
+    return false
+  }
 
-  return basePoints + lengthBonus + bracketBonus + typingBonus
+  if (/^[A-Z]$/u.test(char)) {
+    return true
+  }
+
+  if (char.codePointAt(0) !== undefined && char.codePointAt(0)! > 0x7f) {
+    return true
+  }
+
+  return '!"#$%&\'()*+,:;<=>?@^_{|}~'.includes(char)
 }
 
-function normalizeBasePoints(basePoints: number): number {
-  if (basePoints <= 18) {
-    return 8
+function measureTypingEffort(source: string): number {
+  let effort = 0
+  let previousShiftState: boolean | null = null
+
+  for (const char of source) {
+    if (/^\s$/u.test(char)) {
+      continue
+    }
+
+    const shiftRequired = isShiftRequiredChar(char)
+
+    if (shiftRequired) {
+      if (/^[A-Z]$/u.test(char)) {
+        effort += 1.5
+      } else if (char.codePointAt(0)! > 0x7f) {
+        effort += 3
+      } else {
+        effort += 1
+      }
+    } else if (/^[0-9a-z]$/u.test(char) || '.,-/=\\[]`'.includes(char)) {
+      effort += 0.35
+    } else {
+      effort += 0.75
+    }
+
+    if (previousShiftState !== null && previousShiftState !== shiftRequired) {
+      effort += previousShiftState ? 2.2 : 1.5
+    }
+
+    previousShiftState = shiftRequired
   }
 
-  if (basePoints <= 24) {
-    return 10
+  return effort
+}
+
+function measureNumberRunEffort(source: string): number {
+  let effort = 0
+  const runs = source.match(/[0-9]+/g) ?? []
+
+  for (const run of runs) {
+    if (run.length <= 1) {
+      continue
+    }
+
+    effort += (run.length - 1) * 0.85
+
+    if (run.length >= 3) {
+      effort += 0.5
+    }
+
+    if (run.length >= 5) {
+      effort += 0.75
+    }
   }
 
-  if (basePoints <= 30) {
-    return 12
-  }
+  return effort
+}
 
-  if (basePoints <= 36) {
-    return 14
-  }
+function scoreProblem(source: string, basePoints: number): number {
+  const keywordBonus =
+    countOccurrences(source, 'limits') * 3 +
+    countOccurrences(source, 'thin') * 1 +
+    countOccurrences(source, 'planck') * 1 +
+    countOccurrences(source, '\\u') * 5
 
-  return 16
+  const typingEffort = measureTypingEffort(source)
+  const numberRunEffort = measureNumberRunEffort(source)
+  const baseEffort = basePoints * 0.5
+  const rawPoints = baseEffort + typingEffort + numberRunEffort + keywordBonus
+
+  return Math.max(3, Math.round(rawPoints / 2.5))
 }
 
 function problem(name: string, src: string, pts: number): Problem {
-  return { name, src, pts: scoreProblem(src, normalizeBasePoints(pts)) }
+  return { name, src, pts: scoreProblem(src, pts) }
 }
 
 export const PROBLEMS: Problem[] = [
-  problem('Pythagorean Theorem', 'c = sqrt(a^2 + b^2)', 14),
-  problem("Euler's Identity", 'e^(pi i) + 1 = 0', 16),
+  problem('Pythagorean Theorem', 'c = sqrt(a^2 + b^2)', 8),
+  problem("Euler's Identity", 'e^(pi i) + 1 = 0', 12),
   problem("Bayes' Theorem", 'P(A|B) = (P(B|A) P(A))/P(B)', 18),
   problem('Law of Cosines', 'c^2 = a^2 + b^2 - 2 a b cos C', 18),
   problem('Arithmetic–Geometric Mean', '(x + y)/2 >= sqrt(x y)', 18),
@@ -87,12 +124,12 @@ export const PROBLEMS: Problem[] = [
   problem('Cauchy–Riemann Equations', '(partial u)/(partial x) = (partial v)/(partial y) "and" (partial u)/(partial y) = -(partial v)/(partial x) ==> (partial f)/(partial overline(z)) = 0', 26),
   problem("Legendre's Formula", 'nu_p (n!) = sum_(i=1)^oo floor(n/(p^i))', 28),
   problem('Fourier Transform', 'hat(f)(omega) = integral_(-oo)^oo f(x) e^(-2 pi i x omega) dif x', 30),
-  problem('Gamma Function Recurrence', 'Gamma(z + 1) = z Gamma(z)', 22),
-  problem('Beta–Gamma Relation', 'Beta(x, y) = (Gamma(x) Gamma(y))/Gamma(x + y)', 30),
-  problem('Gaussian Integral', 'integral_(-oo)^oo e^(-x^2) dif x = sqrt(pi)', 32),
-  problem('Laplace Transform', 'cal(L){f}(s) = integral_0^oo f(t) e^(-s t) dif t', 30),
-  problem('Laplace Derivative Rule', "cal(L){f'(t)} = s F(s) - f(0)", 32),
-  problem('Convolution Theorem', 'hat(f * g)(xi) = hat(f)(xi) hat(g)(xi)', 34),
+  problem('Gamma Function Recurrence', 'Gamma(z + 1) = z Gamma(z)', 16),
+  problem('Beta–Gamma Relation', 'Beta(x, y) = (Gamma(x) Gamma(y))/Gamma(x + y)', 24),
+  problem('Gaussian Integral', 'integral_(-oo)^oo e^(-x^2) dif x = sqrt(pi)', 26),
+  problem('Laplace Transform', 'cal(L){f}(s) = integral_0^oo f(t) e^(-s t) dif t', 26),
+  problem('Laplace Derivative Rule', "cal(L){f'(t)} = s F(s) - f(0)", 20),
+  problem('Convolution Theorem', 'hat(f * g)(xi) = hat(f)(xi) hat(g)(xi)', 24),
   problem('Leibniz Rule with Moving Bounds', "dif/(dif x) integral_(a(x))^(b(x)) f(x, t) dif t = integral_(a(x))^(b(x)) partial/(partial x) f(x, t) dif t + f(b(x)) b'(x) - f(a(x)) a'(x)", 36),
   problem('Chain Rule in Two Variables', '(dif z)/(dif t) = (partial z)/(partial x) (dif x)/(dif t) + (partial z)/(partial y) (dif y)/(dif t)', 34),
   problem('Black–Scholes Equation', '(partial V)/(partial t) + 1/2 sigma^2 S^2 (partial^2 V)/(partial S^2) + r S (partial V)/(partial S) - r V = 0', 34),
@@ -100,31 +137,31 @@ export const PROBLEMS: Problem[] = [
   problem('Maxwell–Faraday Equation', 'nabla times bold(E) = -(partial bold(B))/(partial t)', 32),
   problem('Einstein Field Equations', 'G_(mu nu) + Lambda g_(mu nu) = (8 pi G)/(c^4) T_(mu nu)', 36),
   problem('Matrix Transpose Product', '(bold(A B))^top = bold(B)^top bold(A)^top', 20),
-  problem('Matrix Inverse Product', '(bold(A B))^(-1) = bold(B)^(-1) bold(A)^(-1)', 20),
-  problem('Trace Cyclicity', 'op("trace")(bold(A B C)) = op("trace")(bold(B C A)) = op("trace")(bold(C A B))', 22),
+  problem('Matrix Inverse Product', '(bold(A B))^(-1) = bold(B)^(-1) bold(A)^(-1)', 22),
+  problem('Trace Cyclicity', 'op("trace")(bold(A B C)) = op("trace")(bold(B C A)) = op("trace")(bold(C A B))', 28),
   problem('Cayley–Hamilton for 2×2', 'bold(A)^2 - op("trace")(bold(A)) bold(A) + det(bold(A)) bold(I) = 0', 34),
   problem('Matrix Determinant Lemma', 'det(bold(A) + bold(u) bold(v)^top) = (1 + bold(v)^top bold(A)^(-1) bold(u)) det(bold(A))', 36),
   problem('Leibniz Determinant Formula', 'det(bold(A)) = sum_(sigma in S_n) op("sgn")(sigma) product_(i=1)^n a_(i, sigma(i))', 38),
   problem('Spectral Decomposition', 'bold(A) = bold(Q) mat(lambda_1, 0, 0, 0; 0, lambda_2, 0, 0; 0, 0, lambda_3, 0; 0, 0, 0, lambda_4) bold(Q)^(-1)', 36),
   problem('Vector Triple Product', 'bold(a) times (bold(b) times bold(c)) = bold(b) (bold(a) dot bold(c)) - bold(c) (bold(a) dot bold(b))', 38),
-  problem('Scalar Triple Product', 'bold(a) dot (bold(b) times bold(c)) = det mat(a_1, a_2, a_3; b_1, b_2, b_3; c_1, c_2, c_3)', 40),
-  problem('Lagrange Identity', 'norm(bold(a) times bold(b))^2 = norm(bold(a))^2 norm(bold(b))^2 - (bold(a) dot bold(b))^2', 38),
+  problem('Scalar Triple Product', 'bold(a) dot (bold(b) times bold(c)) = det mat(a_1, a_2, a_3; b_1, b_2, b_3; c_1, c_2, c_3)', 38),
+  problem('Lagrange Identity', 'norm(bold(a) times bold(b))^2 = norm(bold(a))^2 norm(bold(b))^2 - (bold(a) dot bold(b))^2', 34),
   problem('Curl of a Curl', 'nabla times (nabla times bold(F)) = nabla (nabla dot bold(F)) - nabla^2 bold(F)', 40),
   problem("Green's Theorem", 'integral.cont_(partial Omega) P dif x + Q dif y = integral.double_Omega ((partial Q)/(partial x) - (partial P)/(partial y)) dif x dif y', 40),
   problem("Green's First Identity", 'integral.double_Omega (u nabla^2 v + nabla u dot nabla v) dif x dif y = integral.cont_(partial Omega) u (partial v)/(partial bold(hat(n))) dif s', 42),
   problem("Green's Second Identity", 'integral.double_Omega (u nabla^2 v - v nabla^2 u) dif x dif y = integral.cont_(partial Omega) (u (partial v)/(partial hat(bold(n))) - v (partial u)/(partial hat(bold(n)))) dif s', 42),
   problem('Divergence Theorem', 'integral.triple_V nabla dot bold(F) dif x dif y dif z = integral.surf_S bold(F) dot hat(bold(n)) dif S', 42),
   problem("Stokes' Theorem", 'integral.cont_C bold(F) dot dif bold(r) = integral.double_S (nabla times bold(F)) dot hat(bold(n)) dif S', 42),
-  problem('Parseval Identity', 'integral_(-oo)^oo abs(f(x))^2 dif x = integral_(-oo)^oo abs(hat(f)(xi))^2 dif xi', 42),
+  problem('Parseval Identity', 'integral_(-oo)^oo abs(f(x))^2 dif x = integral_(-oo)^oo abs(hat(f)(xi))^2 dif xi', 30),
   problem('Wirtinger Antiholomorphic Chain Rule', '(partial F)/(partial overline(z)) = (partial F)/(partial w) (partial w)/(partial overline(z)) + (partial F)/(partial overline(w)) (partial overline(w))/(partial overline(z))', 34),
   problem('Christoffel Transformation Law', "Gamma^(i')_(j' k') = (partial x^(i'))/(partial x^r) (partial x^p)/(partial x^(j')) (partial x^q)/(partial x^(k')) Gamma^r_(p q) + (partial x^(i'))/(partial x^r) (partial^2 x^r)/(partial x^(j') partial x^(k'))", 40),
-  problem('Global Residue Theorem', 'sum_(k=1)^n limits(op("Res"))_(z = z_k) f(z) + limits(op("Res"))_(z = oo) f(z) = 0', 52),
+  problem('Global Residue Theorem', 'sum_(k=1)^n limits(op("Res"))_(z = z_k) f(z) + limits(op("Res"))_(z = oo) f(z) = 0', 48),
   problem('Residue Theorem', 'integral.cont.ccw_gamma f(z) dif z = 2 pi i sum_(k=1)^n limits(op("Res"))_(z = z_k) f(z) op("Ind")_gamma (z_k)', 56),
   problem('Second Fundamental Theorem of Nevanlinna Theory', "m(r,f) + sum_(nu=1)^q m(r,a_nu,f) <= 2 T(r,f) - N(r,0,f') - 2 N(r,f) + N(r,f') + S(r,f)", 42),
   problem('Nevanlinna Error Term', "S(r,f) = m(r,(f')/f) + m(r,sum_(nu=1)^q (f')/(f - a_nu)) + q log((3 q)/delta) + log 2 - log abs(c')", 42),
-  problem('Nevanlinna Deficiency Relation', 'sum_(a in CC) [delta(a) + theta(a)] <= sum_(a in CC) Theta(a) <= 2', 38),
+  problem('Nevanlinna Deficiency Relation', 'sum_(a in CC) [delta(a) + theta(a)] <= sum_(a in CC) Theta(a) <= 2', 20),
   problem('Order of a Meromorphic Function', 'rho = limsup_(r -> oo) (log^+ T(r, f))/(log r)', 34),
-  problem("Cartan's Identity", 'T(r, f) = 1/(2 pi) integral_0^(2 pi) N(r, e^(i theta), f) dif theta + cases(log abs(lim_(z -> 0) f(z) z^(inf{k in NN : lim_(z -> 0) f(z) z^k in CC^*})) & "if" f(0) = oo, log^+ abs(f(0)) & "if" f(0) in CC^*, 0 & "if" f(0) = 0)', 86),
+  problem("Cartan's Identity", 'T(r, f) = 1/(2 pi) integral_0^(2 pi) N(r, e^(i theta), f) dif theta + cases(log abs(lim_(z -> 0) f(z) z^(inf{k in NN : lim_(z -> 0) f(z) z^k in CC^*})) & "if" f(0) = oo, log^+ abs(f(0)) & "if" f(0) in CC^*, 0 & "if" f(0) = 0)', 90),
   problem('Analytic Capacity', `gamma(K) = sup { abs(f'(oo)) : f "is holomorphic on" hat(CC) without K and f(hat(CC) without K) subset.eq overline(DD) and f(oo) = 0 }`, 42),
   problem('Cauchy–Pompeiu Formula', 'f(z) = 1/(2 pi i) (integral.cont.ccw_(partial Omega) (f(zeta))/(zeta - z) dif zeta - integral.double_Omega (partial f)/(partial overline(zeta)) (dif overline(zeta) and dif zeta)/(zeta - z))', 42),
   problem('Schwarz Integral Formula', 'f(z) = 1 / (2 pi i) integral.cont.ccw_(abs(zeta) = r) (Re(f(zeta))) / zeta (zeta+z)/(zeta-z)dif zeta + i Im(f(0))', 42),
@@ -132,9 +169,9 @@ export const PROBLEMS: Problem[] = [
   problem('Quantifier Negation', 'not (forall x in X : P(x)) <==> exists x in X : not P(x)', 26),
   problem('Set-Theoretic Inclusion', 'A subset.eq B and B subset.eq C ==> A subset.eq C', 22),
   problem('Kronecker Delta Cases', 'delta_(i j) = cases(1 & "if" i = j, 0 & "if" i != j)', 24),
-  problem('Modal Distribution', 'square (P -> Q) -> (square P -> square Q)', 24),
+  problem('Modal Distribution', 'square (P -> Q) -> (square P -> square Q)', 18),
   problem("Jensen's Formula", 'log abs(f(0)) = 1/(2 pi) integral_0^(2 pi) log abs(f(r e^(i theta))) dif theta - sum_(abs(a_n) < r) log(r/(abs(a_n)))', 38),
-  problem('Poisson–Jensen Formula', 'log abs(f(z)) = 1/(2 pi) integral_0^(2 pi) log abs(f(r e^(i theta))) Re((r e^(i theta) + z)/(r e^(i theta) - z)) dif theta - sum_(abs(a_n) < r) log abs((r (z - a_n))/(r^2 - overline(a_n) z)) + sum_(abs(b_n) < r) log abs((r (z - b_n))/(r^2 - overline(b_n) z))', 86),
+  problem('Poisson–Jensen Formula', 'log abs(f(z)) = 1/(2 pi) integral_0^(2 pi) log abs(f(r e^(i theta))) Re((r e^(i theta) + z)/(r e^(i theta) - z)) dif theta - sum_(abs(a_n) < r) log abs((r (z - a_n))/(r^2 - overline(a_n) z)) + sum_(abs(b_n) < r) log abs((r (z - b_n))/(r^2 - overline(b_n) z))', 90),
   problem('Meromorphic Automorphisms of the Riemann Sphere', 'op("PSL")(2, CC) tilde.equiv op("SL")(2, CC) \\/ { plus.minus bold(I) } tilde.equiv op("Aut")(hat(CC))', 34),
   problem('Weierstrass Factorization Theorem', 'f(z) = z^m e^(phi(z)) product_(n=1)^oo E_(p_n)((z)/(a_n))', 38),
   problem("Binet's Theorem", 'F_n = 1 / sqrt(5) ((1 + sqrt(5)) / 2)^n - 1 / sqrt(5) ((1 - sqrt(5)) / 2)^n', 38),
@@ -152,7 +189,7 @@ export const PROBLEMS: Problem[] = [
   problem('Intermediate in the Tietze–Urysohn–Brouwer Theorem', 'eta_(A,B) (z) = (op("dist")(z,A) - op("dist")(z,B)) / (op("dist")(z,A) + op("dist")(z,B))', 38),
   problem('Riemann Zeta Functional Equation', 'zeta(s) = 2^s pi^(s - 1) sin(pi s/2) Gamma(1 - s) zeta(1 - s)', 38),
   problem('Riemann Zeta-Xi Relation', 'xi(s) = 1/2 s (s - 1) pi^(-s/2) Gamma(s/2) zeta(s)', 38),
-  problem('Cauchy-Type Estimate', "sup_(z in K) abs(f^((n)) (z)) <= c_n integral_V abs(f(z)) dif x and dif y", 36),
+  problem('Cauchy-Type Estimate', "sup_(z in K) abs(f^((n)) (z)) <= c_n integral_V abs(f(z)) dif x and dif y", 22),
   problem('Harmonic Conjugates', 'v(z) = v(0) + 1/pi integral.cont.ccw_(partial DD) u(zeta) (Im(z overline(zeta))) / (abs(zeta - z)^2) abs((dif zeta) / zeta)', 38),
   problem('Holomorphic Logarithms', "log(Phi(z)) = integral_(z_0)^z (Phi'(zeta))/(Phi(zeta)) dif zeta + log(Phi(z_0))", 36),
   problem('Abel Summability of Fourier Series', "phi(e^(i theta)) = lim_(rho -> 1^-)1 / (2 pi) sum_(n=-oo)^oo (integral_0^(2 pi) phi(e^(i tau))e^(-i n tau) dif tau) e^(i n theta) rho^(abs(n))", 38),
@@ -203,7 +240,7 @@ export const PROBLEMS: Problem[] = [
   problem('Zeta Euler–Mascheroni Identity', 'gamma = lim_(s -> 1) (zeta(s) - 1/(s - 1))', 30),
   problem('Summation by Parts', 'sum_(k=m)^n a_k (b_(k+1) - b_k) = a_(n+1) b_(n+1) - a_m b_m - sum_(k=m)^n b_(k+1) (a_(k+1) - a_k)', 34),
   problem('Linear First-Order ODE Solution', 'y(x) = e^(-integral p(x) dif x) (integral q(x) e^(integral p(x) dif x) dif x + C)', 34),
-  problem('Weierstrass ℘-Function', '\u{2118}(z) = 1/z^2 + sum_(omega in Lambda without {0}) [1/(z - omega)^2 - 1/(omega^2)]', 34),
+  problem('Weierstrass ℘-Function', '\u{2118}(z) = 1/z^2 + sum_(omega in Lambda without {0}) [1/(z - omega)^2 - 1/(omega^2)]', 66),
   problem("Gauss's Law (Integral Form)", 'integral.surf_S bold(E) dot hat(bold(n)) dif S = Q_("enc")/epsilon_0', 30),
   problem("Gauss's Law for Magnetism (Integral Form)", 'integral.surf_S bold(B) dot hat(bold(n)) dif S = 0', 28),
   problem("Faraday's Law (Integral Form)", 'integral.cont_(partial S) bold(E) dot dif bold(ell) = -(dif)/(dif t) integral.surf_S bold(B) dot hat(bold(n)) dif S', 36),
@@ -237,15 +274,15 @@ export const PROBLEMS: Problem[] = [
   problem('Residue at Simple Pole', 'limits(op("Res"))_(z=a) f(z)=lim_(z->a)(z-a)f(z)', 44),
   problem('Residue at Double Pole', 'limits(op("Res"))_(z=a)f(z)=lim_(z->a) dif/(dif z)((z-a)^2 f(z))', 52),
   problem('Poisson Kernel', 'P_r (theta) = 1/(2 pi) sum_(n=-oo)^oo r^(abs(n)) e^(i n theta)', 30),
-  problem('Heat Equation', '(partial u)/(partial t)=k nabla^2 u', 24),
+  problem('Heat Equation', '(partial u) / (partial t) = k nabla^2 u', 24),
   problem('Helmholtz Equation', 'nabla^2 u + lambda u = 0', 22),
   problem('Poisson Equation', 'nabla^2 u = f', 20),
   problem('Continuity Equation Fluid', '(partial rho)/(partial t)+nabla dot (rho bold(v))=0', 26),
-  problem('Navier–Stokes', 'rho((partial bold(v))/(partial t)+(bold(v) dot nabla)bold(v))=-nabla p+mu nabla^2 bold(v)', 38),
-  problem('Euler Fluid Equation', '(partial bold(v))/(partial t)+(bold(v) dot nabla)bold(v)=-(1/rho)nabla p', 32),
+  problem('Navier–Stokes', 'rho ((partial bold(v)) / (partial t) + (bold(v) dot nabla) bold(v)) = -nabla p + mu nabla^2 bold(v)', 38),
+  problem('Euler Fluid Equation', '(partial bold(v))/(partial t) + (bold(v) dot nabla) bold(v)=-1 / rho nabla p', 32),
   problem('Hamilton Equations', '(dif q_i)/(dif t)=(partial H)/(partial p_i) "and" (dif p_i)/(dif t)=-(partial H)/(partial q_i)', 34),
   problem('Lagrange Equation', '(dif)/(dif t)(partial L)/(partial dot(q_i))-(partial L)/(partial q_i)=0', 34),
-  problem('Hamilton–Jacobi', '(partial S)/(partial t)+H(q,(partial S)/(partial q),t)=0', 32),
+  problem('Hamilton–Jacobi', '(partial S)/(partial t) + H(q,(partial S)/(partial q),t) = 0', 32),
   problem('Noether Current', '(partial j^mu)/(partial x^mu)=0', 22),
   problem('Klein–Gordon Equation', '(square + m^2) Phi =0', 22),
   problem('Dirac Equation', '(i Gamma^mu partial_mu - m) Psi=0', 28),
